@@ -1,0 +1,31 @@
+__aicore__ inline void Or(const AscendC::LocalTensor<float> &output,
+        const AscendC::LocalTensor<float> &input0,
+        const AscendC::LocalTensor<float> &input1,
+        AscendC::LocalTensor<uint8_t> &sharedTmpBuffer,
+        int &offset_ptr,
+        const int32_t data_length) {
+    AscendC::LocalTensor<int16_t> input_a, input_b, output_ab;
+    int32_t or_offset = (offset_ptr + 31) & ~31;
+    offset_ptr = or_offset;
+    input_a = sharedTmpBuffer.ReinterpretCast<int16_t>()[offset_ptr / (int32_t)sizeof(int16_t)];
+    input_a.SetSize(data_length * sizeof(int16_t));
+    offset_ptr += input_a.GetSize();
+    or_offset = (offset_ptr + 31) & ~31;
+    offset_ptr = or_offset;
+    input_b = sharedTmpBuffer.ReinterpretCast<int16_t>()[offset_ptr / (int32_t)sizeof(int16_t)];
+    input_b.SetSize(data_length * sizeof(int16_t));
+    offset_ptr += input_b.GetSize();
+    or_offset = (offset_ptr + 31) & ~31;
+    offset_ptr = or_offset;
+    output_ab = sharedTmpBuffer.ReinterpretCast<int16_t>()[offset_ptr / (int32_t)sizeof(int16_t)];
+    output_ab.SetSize(data_length * sizeof(int16_t));
+    offset_ptr += output_ab.GetSize();
+    for (int32_t i = 0; i < data_length; ++i) {
+        input_a.SetValue(i, static_cast<int16_t>(input0.GetValue(i)));
+        input_b.SetValue(i, static_cast<int16_t>(input1.GetValue(i)));
+    }
+    AscendC::Or(output_ab, input_a, input_b, data_length);
+    for (int32_t i = 0; i < data_length; ++i) {
+        output.SetValue(i, static_cast<float>(output_ab.GetValue(i)));
+    }
+}

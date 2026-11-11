@@ -1,0 +1,15 @@
+
+
+if(DEFINED ENV{HARDFUZZ_ORACLE_OPT} AND NOT "$ENV{HARDFUZZ_ORACLE_OPT}" STREQUAL "")
+    if(NOT "$ENV{HARDFUZZ_ORACLE_OPT}" MATCHES "^(0|2|3)$")
+        message(FATAL_ERROR "HARDFUZZ_ORACLE_OPT must be 0, 2 or 3")
+    endif()
+    set(HARDFUZZ_ORACLE_FLAGS -O$ENV{HARDFUZZ_ORACLE_OPT} -fno-fast-math -ffp-contract=off)
+    target_compile_options(ascendc_kernels_bbit PRIVATE ${HARDFUZZ_ORACLE_FLAGS})
+    if(RUN_MODE STREQUAL "cpu")
+        target_compile_options(ascendc_kernels_cpu PRIVATE ${HARDFUZZ_ORACLE_FLAGS})
+    else()
+        ascendc_compile_options(ascendc_kernels_${RUN_MODE} PRIVATE ${HARDFUZZ_ORACLE_FLAGS})
+    endif()
+    message(STATUS "HardFuzz host and kernel oracle flags: ${HARDFUZZ_ORACLE_FLAGS}")
+endif()

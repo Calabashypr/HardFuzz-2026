@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+**/build/
+**/out/
+**/input/
+**/output/
+ascendc_kernels_bbit
+/graphs_out/
+/dag_out/
+/case_*/
+/validation_case/
+/.validation/
+/program_*.cpp*
+
+.ipynb_checkpoints/
