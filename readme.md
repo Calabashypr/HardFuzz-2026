@@ -1,5 +1,5 @@
 # HardFuzz
-This is the open resposity of the paper "HardFuzz: Testing DL Compiler Backends via Hardware-aware Program Generation".
+This is the open-source repository for the paper "HardFuzz: Testing DL Compiler Backends via Hardware-aware Program Generation".
 ## Requirements
 
 - Python 3.10 or later and NumPy.
@@ -59,8 +59,6 @@ Oracle 2 compares CPU and NPU outputs for compatible programs:
 ```bash
 bash tools/run_oracle2.sh ./baremix_graph --cpu-compatible --soc Ascend910B3
 ```
-
-The current CPU adapter skips mixed-core MatMul/Mmad programs.
 
 Oracle 3 checks compilation, execution, and output failures:
 
