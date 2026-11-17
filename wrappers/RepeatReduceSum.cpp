@@ -9,7 +9,5 @@ __aicore__ inline void RepeatReduceSum(const AscendC::LocalTensor<float> &output
     int32_t src_blk_stride = 1;
     int32_t dst_rep_stride = 1;
     int32_t src_rep_stride = 8;
-    AscendC::printf("[DBG] RepeatReduceSum enter len=%d mask=%d in0=%f\n", data_length, mask, input0.GetValue(0));
     AscendC::RepeatReduceSum<float>(output, input0, repeat_time, mask, dst_blk_stride, src_blk_stride, dst_rep_stride, src_rep_stride);
-    AscendC::printf("[DBG] RepeatReduceSum exit out0=%f\n", output.GetValue(0));
 }

@@ -139,8 +139,8 @@ int32_t main(int32_t argc, char *argv[])
     uint8_t *workspaceDevice;
     CHECK_ACL(aclrtMalloc((void **)&workspaceDevice, workspaceSize, ACL_MEM_MALLOC_HUGE_FIRST));
 
-    ACLRT_LAUNCH_KERNEL(baremix_custom)
-    (blockDim, stream, input1Device, input2Device, inputADevice, inputBDevice, inputBiasDevice, outputCDevice, workspaceDevice, tilingDevice);
+    CHECK_ACL(ACLRT_LAUNCH_KERNEL(baremix_custom)(
+        blockDim, stream, input1Device, input2Device, inputADevice, inputBDevice, inputBiasDevice, outputCDevice, workspaceDevice, tilingDevice));
 
     CHECK_ACL(aclrtSynchronizeStream(stream));
 
@@ -151,35 +151,6 @@ int32_t main(int32_t argc, char *argv[])
     CHECK_ACL(aclrtMemcpy(outputCHost, cFileSize, outputCDevice, cFileSize, ACL_MEMCPY_DEVICE_TO_HOST));
     WriteFile("./output/output.bin", outputCHost, cFileSize);
 
-    {
-        float *outF = reinterpret_cast<float *>(outputCHost);
-        int n = static_cast<int>(cFileSize / sizeof(float));
-        float fmax = -1e38f, fmin = 1e38f;
-        double fsum = 0.0;
-        int nsentinel = 0;
-        for (int i = 0; i < n; ++i) {
-            float v = outF[i];
-            if (v < -999.0f) { nsentinel++; continue; }
-            if (v > fmax) fmax = v;
-            if (v < fmin) fmin = v;
-            fsum += v;
-        }
-        int nvalid = n - nsentinel;
-        printf("\n========== OUTPUT DIAGNOSTICS ==========\n");
-        printf("  total=%-6d valid=%-6d sentinel=%d\n", n, nvalid, nsentinel);
-        if (nvalid > 0) {
-            printf("  min=%.6e  max=%.6e  mean=%.6e\n", fmin, fmax, fsum / nvalid);
-        } else {
-            printf("  [WARN] ALL OUTPUT IS SENTINEL OR INVALID!\n");
-        }
-        printf("  first: ");
-        int printed = 0;
-        for (int i = 0; i < n && printed < 8; ++i) {
-            if (outF[i] > -999.0f) { printf("%.4f ", outF[i]); printed++; }
-        }
-        printf("\n  last: %.6f\n", outF[n - 1]);
-        printf("=========================================\n\n");
-    }
     CHECK_ACL(aclrtFree(outputCDevice));
     CHECK_ACL(aclrtFreeHost(outputCHost));
     CHECK_ACL(aclrtFree(inputBiasDevice));

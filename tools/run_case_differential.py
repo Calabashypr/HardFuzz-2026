@@ -28,6 +28,16 @@ FP_FLAGS = ["-fno-fast-math", "-ffp-contract=off"]
 SKIP_COPY = {"build", "out", "input", "output", "ascendc_kernels_bbit",
              "differential_results", ".git", "__pycache__", "run_multi_data.log"}
 MODES = {"build-variant": "oracle1", "cpu-npu": "oracle2"}
+RUNTIME_ERROR_RE = re.compile(
+    r"\[(?:error)\]|\bSIG(?:SEGV|BUS|ABRT|ILL|FPE) Signal\b|"
+    r"(?:^|\s)ERROR\s*:|\baclError:\s*[1-9]\d*|"
+    r"\b(?:AICore|AIVCore)\s+exception\b|\billegal instruction\b|"
+    r"\bsynchronize stream failed\b", re.IGNORECASE)
+
+def runtime_errors(log_path):
+    """Detect runtime failures."""
+    return [line for line in Path(log_path).read_text(errors="replace").splitlines()
+            if RUNTIME_ERROR_RE.search(line)]
 
 def dump_json(path, obj):
     Path(path).write_text(json.dumps(obj, indent=2, ensure_ascii=False, allow_nan=False) + "\n")
@@ -229,16 +239,16 @@ def run_config(name, mode, opt, snapshot, source_hashes, input_hashes, args, res
     cfg["run"] = run
     output = work / args.output_file
 
-    cpu_errors = []
-    if mode == "cpu":
-        cpu_errors = [line for line in Path(run["log"]).read_text(errors="replace").splitlines()
-                      if re.search(r"\[(?:ERROR|error)\]|SIG(?:SEGV|BUS|ABRT|ILL|FPE) Signal", line)]
-        if cpu_errors:
-            cfg["cpu_simulator_errors"] = cpu_errors
-    if run["exit_status"] != 0 or cpu_errors:
+    errors = runtime_errors(run["log"])
+    if errors:
+        cfg["runtime_errors"] = errors
+        if mode == "cpu":
+            cfg["cpu_simulator_errors"] = errors
+    if run["exit_status"] != 0 or errors:
         if output.is_file():
             shutil.copy2(output, artifact / "failed_output.bin")
-        return cfg, failure("run", name, "CPU simulator reported an internal error" if cpu_errors else "execution failed or timed out", results, run)
+        reason = f"{mode.upper()} runtime reported an internal error" if errors else "execution failed or timed out"
+        return cfg, failure("run", name, reason, results, run)
     if manifest(private_data / "input") != input_hashes or manifest(work / "input") != input_hashes:
         return cfg, failure("input_integrity", name, "runtime modified the fixed input", results, run)
     mutation = changed_files(clone, source_hashes)

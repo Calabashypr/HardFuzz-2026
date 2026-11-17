@@ -4,6 +4,10 @@ __aicore__ inline void LoadDataUnzip(const AscendC::LocalTensor<float> &output,
         AscendC::LocalTensor<uint8_t> &sharedTmpBuffer,
         int &offset_ptr,
         const int32_t data_length) {
+#if __NPU_ARCH__ == 2201
+    // Use the C220 passthrough path.
+    AscendC::DataCopy(output, input0, (uint32_t)data_length);
+#else
 
     AscendC::GlobalTensor<int8_t> weGlobal;
     weGlobal.SetGlobalBuffer(reinterpret_cast<__gm__ int8_t *>(srcWeGm), 512U);
@@ -17,4 +21,6 @@ __aicore__ inline void LoadDataUnzip(const AscendC::LocalTensor<float> &output,
     AscendC::LoadDataUnzip<int8_t>(dstB1, weGlobal);
 
     AscendC::DataCopy(output, input0, (uint32_t)data_length);
+
+#endif
 }

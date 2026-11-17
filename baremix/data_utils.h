@@ -13,35 +13,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <cassert>
 #include <cstdio>
 #include <fstream>
-#include <iomanip>
 #include <iostream>
 #include <string>
 #include <vector>
 
 #include "acl/acl.h"
-
-typedef enum {
-    DT_UNDEFINED = -1,
-    FLOAT = 0,
-    HALF = 1,
-    INT8_T = 2,
-    INT32_T = 3,
-    UINT8_T = 4,
-    INT16_T = 6,
-    UINT16_T = 7,
-    UINT32_T = 8,
-    INT64_T = 9,
-    UINT64_T = 10,
-    DOUBLE = 11,
-    BOOL = 12,
-    STRING = 13,
-    COMPLEX64 = 16,
-    COMPLEX128 = 17,
-    BF16 = 27
-} printDataType;
 
 #define INFO_LOG(fmt, args...) fprintf(stdout, "[INFO]  " fmt "\n", ##args)
 #define WARN_LOG(fmt, args...) fprintf(stdout, "[WARN]  " fmt "\n", ##args)
@@ -117,75 +95,4 @@ bool WriteFile(const std::string &filePath, const void *buffer, size_t size)
     return true;
 }
 
-template <typename T> void DoPrintData(const T *data, size_t count, size_t elementsPerRow)
-{
-    assert(elementsPerRow != 0);
-    for (size_t i = 0; i < count; ++i) {
-        std::cout << std::setw(10) << data[i];
-        if (i % elementsPerRow == elementsPerRow - 1) {
-            std::cout << std::endl;
-        }
-    }
-}
-
-void DoPrintHalfData(const aclFloat16 *data, size_t count, size_t elementsPerRow)
-{
-    assert(elementsPerRow != 0);
-    for (size_t i = 0; i < count; ++i) {
-        std::cout << std::setw(10) << std::setprecision(6) << aclFloat16ToFloat(data[i]);
-        if (i % elementsPerRow == elementsPerRow - 1) {
-            std::cout << std::endl;
-        }
-    }
-}
-
-void PrintData(const void *data, size_t count, printDataType dataType, size_t elementsPerRow = 16)
-{
-    if (data == nullptr) {
-        ERROR_LOG("Print data failed. data is nullptr");
-        return;
-    }
-
-    switch (dataType) {
-        case BOOL:
-            DoPrintData(reinterpret_cast<const bool *>(data), count, elementsPerRow);
-            break;
-        case INT8_T:
-            DoPrintData(reinterpret_cast<const int8_t *>(data), count, elementsPerRow);
-            break;
-        case UINT8_T:
-            DoPrintData(reinterpret_cast<const uint8_t *>(data), count, elementsPerRow);
-            break;
-        case INT16_T:
-            DoPrintData(reinterpret_cast<const int16_t *>(data), count, elementsPerRow);
-            break;
-        case UINT16_T:
-            DoPrintData(reinterpret_cast<const uint16_t *>(data), count, elementsPerRow);
-            break;
-        case INT32_T:
-            DoPrintData(reinterpret_cast<const int32_t *>(data), count, elementsPerRow);
-            break;
-        case UINT32_T:
-            DoPrintData(reinterpret_cast<const uint32_t *>(data), count, elementsPerRow);
-            break;
-        case INT64_T:
-            DoPrintData(reinterpret_cast<const int64_t *>(data), count, elementsPerRow);
-            break;
-        case UINT64_T:
-            DoPrintData(reinterpret_cast<const uint64_t *>(data), count, elementsPerRow);
-            break;
-        case HALF:
-            DoPrintHalfData(reinterpret_cast<const aclFloat16 *>(data), count, elementsPerRow);
-            break;
-        case FLOAT:
-            DoPrintData(reinterpret_cast<const float *>(data), count, elementsPerRow);
-            break;
-        case DOUBLE:
-            DoPrintData(reinterpret_cast<const double *>(data), count, elementsPerRow);
-            break;
-        default:
-            ERROR_LOG("Unsupported type: %d", dataType);
-    }
-    std::cout << std::endl;
-}
 #endif

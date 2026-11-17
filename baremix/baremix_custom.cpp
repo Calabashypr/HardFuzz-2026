@@ -48,16 +48,17 @@ extern "C" __global__ __aicore__ void baremix_custom(GM_ADDR input1, GM_ADDR inp
     int tensor_len_1 = tiling.singleCoreM * tiling.singleCoreN;
     int tensor_len_a = tiling.M * tiling.Ka;
 
-    AscendC::LocalTensor<uint8_t> tmp;
-    bool ans = AscendC::PopStackBuffer<uint8_t, AscendC::TPosition::LCM>(tmp);
-    (void)ans;
+    // Allocate scratch storage.
+    AscendC::TBuf<AscendC::TPosition::VECCALC> persistentBuffer;
+    pipe.InitBuffer(persistentBuffer, 60 * 1024);
+    AscendC::LocalTensor<uint8_t> tmp = persistentBuffer.Get<uint8_t>();
 
     // HF_TENSOR_ALLOCATIONS
 
     AscendC::LocalTensor<float> OutputLocal;
     OutputLocal.SetAddrWithOffset(tmp, offset_ptr);
-    OutputLocal.SetSize(tensor_len_1 * sizeof(float));
-    offset_ptr += OutputLocal.GetSize();
+    OutputLocal.SetSize(tensor_len_1);
+    offset_ptr += OutputLocal.GetSize() * sizeof(float);
 
     AscendC::GlobalTensor<float> OutputGlobal;
 
@@ -77,7 +78,6 @@ extern "C" __global__ __aicore__ void baremix_custom(GM_ADDR input1, GM_ADDR inp
     biasGlobal.SetGlobalBuffer(reinterpret_cast<__gm__ float *>(bias), matmulTiling.N);
 
     if ASCEND_IS_AIC {
-
         int32_t blockIdx = AscendC::GetBlockIdx();
         auto mSingleBlocks = Ceiling(matmulTiling.M, matmulTiling.singleCoreM);
         auto mCoreIndx = blockIdx % mSingleBlocks;
@@ -110,17 +110,17 @@ extern "C" __global__ __aicore__ void baremix_custom(GM_ADDR input1, GM_ADDR inp
     if ASCEND_IS_AIV {
         AscendC::LocalTensor<float> input1;
         input1.SetAddrWithOffset(tmp, offset_ptr);
-        input1.SetSize(tensor_len * sizeof(float));
-        offset_ptr += input1.GetSize();
-        AscendC::Duplicate<float>(input1, (float)0.0, tensor_len);
+        input1.SetSize(tensor_len);
+        offset_ptr += input1.GetSize() * sizeof(float);
         AscendC::DataCopy(input1, input1Global, tensor_len);
 
         AscendC::LocalTensor<int32_t> input2Local;
         input2Local.SetAddrWithOffset(tmp, offset_ptr);
-        input2Local.SetSize(tensor_len * sizeof(int32_t));
-        offset_ptr += input2Local.GetSize();
-        AscendC::Duplicate<int32_t>(input2Local, (int)0, tensor_len);
+        input2Local.SetSize(tensor_len);
+        offset_ptr += input2Local.GetSize() * sizeof(int32_t);
         AscendC::DataCopy(input2Local, input2Global, tensor_len);
+        // Wait for input copies.
+        AscendC::PipeBarrier<PIPE_ALL>();
 
         // HF_COMPUTE_BODY
 

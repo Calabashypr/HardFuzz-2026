@@ -7,6 +7,7 @@ import random
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
+from tools.tensor_allocations import normalize_local_tensor_sizes
 
 
 _WRAPPER_PRIORITY_FIRST = frozenset({"GenerateRandomMask.cpp"})
@@ -35,6 +36,8 @@ def load_all_wrapper_codes(selected_wrapper_stems: Optional[set] = None) -> List
     paths_all = list(wdir.glob("*.cpp"))
     if selected_wrapper_stems is not None:
         selected_wrapper_stems = set(selected_wrapper_stems)
+        if any("_Mask" in name or name.endswith("Mask") for name in selected_wrapper_stems):
+            selected_wrapper_stems.add("GenerateRandomMask")
         paths_all = [p for p in paths_all if p.stem in selected_wrapper_stems]
     paths = sorted(paths_all, key=lambda p: (0 if p.name in _WRAPPER_PRIORITY_FIRST else 1, p.name))
     if not paths:
@@ -43,15 +46,13 @@ def load_all_wrapper_codes(selected_wrapper_stems: Optional[set] = None) -> List
         return []
     seen_sigs: set = set()
     chunks: List[str] = []
-    skipped_files: List[str] = []
     for path in paths:
         try:
-            text = path.read_text(encoding="utf-8")
+            text = normalize_local_tensor_sizes(path.read_text(encoding="utf-8"))
         except OSError as exc:
             raise RuntimeError(f"Cannot read wrapper file {path}: {exc}") from exc
         sigs = _extract_aicore_signatures(text)
         if sigs and any(s in seen_sigs for s in sigs):
-            skipped_files.append(path.name)
             continue
         for s in sigs:
             seen_sigs.add(s)
@@ -59,11 +60,6 @@ def load_all_wrapper_codes(selected_wrapper_stems: Optional[set] = None) -> List
             text += "\n"
         chunks.append(text)
 
-    if skipped_files and os.environ.get("WRAPPER_DEDUP_VERBOSE"):
-        import sys
-
-        for name in skipped_files:
-            print(f"[wrappers] Skipping duplicate signature: {name}", file=sys.stderr)
     return chunks
 
 def _env_on(name: str) -> bool:
@@ -97,7 +93,7 @@ def typed_interface_wrapper(op: str, dtype: str, capacity: int) -> List[str]:
     for var in [f"typed_input{i}" for i in range(arity)] + ["typed_output"]:
         lines += ["    offset_ptr = (offset_ptr + 31) & ~31;",
                   f"    AscendC::LocalTensor<{cpp_type}> {var} = tmp.ReinterpretCast<{cpp_type}>()[offset_ptr / sizeof({cpp_type})];",
-                  f"    {var}.SetSize({capacity} * sizeof({cpp_type}));",
+                  f"    {var}.SetSize({capacity});",
                   f"    offset_ptr += {capacity} * sizeof({cpp_type});"]
     round_mode = "CAST_RINT" if dtype == "int32" else "CAST_NONE"
     for i in range(arity):
@@ -183,10 +179,9 @@ class CFG:
     def op(self, n: int) -> str:
         return sanitize_op(self.nodes.get(n, {}).get("op"))
 
-    def generate_code(self, enable_dump: bool = False) -> List[str]:
+    def generate_code(self) -> List[str]:
         lines: List[str] = []
         indent_unit = "    "
-        trace_node_exec = _env_on("TRACE_NODE_EXEC")
 
         capacity = int(os.environ.get("BENCHMARK_TENSOR_LEN", "64"))
         template = Path(__file__).resolve().parent / "baremix" / "baremix_custom.cpp"
@@ -1171,19 +1166,12 @@ class CFG:
 
                 lines.append(f"{indent_unit * indent}AscendC::Duplicate<float>({out_var}, 0.0f, tensor_len); // pad node {curr}")
                 lines.append(f"{indent_unit * indent}AscendC::PipeBarrier<PIPE_ALL>();")
-                if trace_node_exec:
-                    lines.append(f'{indent_unit * indent}AscendC::printf("[TRACE] node {curr} {opn} begin\\n");')
 
                 if "offset_ptr" in op_line:
                     lines.append(f"{indent_unit * indent}offset_ptr = scratch_base;")
                 lines.append(op_line)
 
                 lines.append(f"{indent_unit * indent}AscendC::PipeBarrier<PIPE_ALL>();")
-                if trace_node_exec:
-                    lines.append(f'{indent_unit * indent}AscendC::printf("[TRACE] node {curr} {opn} end\\n");')
-                if enable_dump:
-                    lines.append(f"{indent_unit * indent}AscendC::DumpTensor({out_var}, 5, tensor_len);")
-                    lines.append(f"{indent_unit * indent}AscendC::printf(\"{out_var}:{in_vars}\\n\");")
                 curr += 1
             return curr
 
@@ -1198,8 +1186,10 @@ class CFG:
         prog_lines: List[str] = []
         prog_lines.append("__aicore__ inline void Compute(uint32_t rowNum) {")
 
-        prog_lines.append(f"{indent_unit}AscendC::LocalTensor<uint8_t> tmp;")
-        prog_lines.append(f"{indent_unit}bool ans = AscendC::PopStackBuffer<uint8_t, AscendC::TPosition::LCM>(tmp);")
+        prog_lines.append(f"{indent_unit}AscendC::TPipe pipe;")
+        prog_lines.append(f"{indent_unit}AscendC::TBuf<AscendC::TPosition::VECCALC> persistentBuffer;")
+        prog_lines.append(f"{indent_unit}pipe.InitBuffer(persistentBuffer, 60 * 1024);")
+        prog_lines.append(f"{indent_unit}AscendC::LocalTensor<uint8_t> tmp = persistentBuffer.Get<uint8_t>();")
         prog_lines.append(f"{indent_unit}int offset_ptr = 0;")
         prog_lines.append(f"{indent_unit}int sharedTmpBufferSize = 60 * 1024;")
         prog_lines.append(f"{indent_unit}constexpr int kOutNum = {max(1, max_out_id)};")
@@ -1229,12 +1219,12 @@ class CFG:
         if sorted_outputs:
             prog_lines.append(f"{indent_unit}AscendC::LocalTensor<float> {', '.join(sorted_outputs)};")
             prog_lines.append(f"{indent_unit}{sorted_outputs[0]} = tmp.ReinterpretCast<float>()[offset_ptr / (int32_t)sizeof(float)];")
-            prog_lines.append(f"{indent_unit}{sorted_outputs[0]}.SetSize(tensor_len * sizeof(float));")
-            prog_lines.append(f"{indent_unit}offset_ptr += {sorted_outputs[0]}.GetSize();")
+            prog_lines.append(f"{indent_unit}{sorted_outputs[0]}.SetSize(tensor_len);")
+            prog_lines.append(f"{indent_unit}offset_ptr += {sorted_outputs[0]}.GetSize() * sizeof(float);")
             for var in sorted_outputs[1:]:
                 prog_lines.append(f"{indent_unit}{var} = tmp.ReinterpretCast<float>()[offset_ptr / (int32_t)sizeof(float)];")
-                prog_lines.append(f"{indent_unit}{var}.SetSize(tensor_len * sizeof(float));")
-                prog_lines.append(f"{indent_unit}offset_ptr += {var}.GetSize();")
+                prog_lines.append(f"{indent_unit}{var}.SetSize(tensor_len);")
+                prog_lines.append(f"{indent_unit}offset_ptr += {var}.GetSize() * sizeof(float);")
         prog_lines.append(f"{indent_unit}const int scratch_base = offset_ptr;")
 
         for var in sorted_outputs:
@@ -1276,14 +1266,13 @@ class CFG:
 def main():
     parser = argparse.ArgumentParser(description="Convert graph JSON into AscendC source")
     parser.add_argument("--json", type=str, default="graphx.json", help="Graph JSON path")
-    parser.add_argument("--enable_dump", action="store_true", help="Enable output tensor dumps (disabled by default)")
     parser.add_argument("--shape-manifest", help="Write per-node power-of-two lengths as JSON")
     parser.add_argument("--dtype-manifest", help="Write per-node native interface dtypes as JSON")
     args = parser.parse_args()
     with open(args.json, "r", encoding="utf-8") as f:
         data = json.load(f)
     cfg = CFG(data)
-    lines = cfg.generate_code(enable_dump=getattr(args, "enable_dump", False))
+    lines = cfg.generate_code()
     if args.shape_manifest:
         Path(args.shape_manifest).write_text(json.dumps(cfg.shape_manifest, indent=2) + "\n", encoding="utf-8")
     if args.dtype_manifest:

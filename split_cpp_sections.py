@@ -7,6 +7,7 @@ _SCRIPT = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_SCRIPT)
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
+from tools.tensor_allocations import normalize_local_tensor_sizes
 from tools.log_utils import setup_logger
 log = setup_logger("split_cpp")
 
@@ -100,6 +101,14 @@ def remove_duplicate_decls(text):
 def clean_conflicting_decls(text):
 
     text = text.replace('sharedTmpBuffer', 'tmp')
+    # Reuse the template's scratch buffer.
+    for pattern in (
+        r'^\s*AscendC::TPipe\s+pipe\s*;\s*$',
+        r'^\s*AscendC::TBuf<AscendC::TPosition::VECCALC>\s+persistentBuffer\s*;\s*$',
+        r'^\s*pipe\.InitBuffer\(persistentBuffer,[^;]+\);\s*$',
+        r'^\s*AscendC::LocalTensor<uint8_t>\s+tmp\s*=\s*persistentBuffer\.Get<uint8_t>\(\);\s*$',
+    ):
+        text = re.sub(pattern, '', text, flags=re.MULTILINE)
 
     text = re.sub(r'^\s*AscendC::LocalTensor<uint8_t>\s+tmp\s*;\s*$', '', text, flags=re.MULTILINE)
 
@@ -189,6 +198,10 @@ def inject_missing_wrappers(pre_compute_text, all_code):
                 wrapper_code = fw.read().strip()
             pre_compute_text = pre_compute_text.rstrip('\n') + '\n\n' + wrapper_code + '\n'
             log.info(f"INJECTING {mask_name} wrapper from {wrapper_path}")
+    if (re.search(r"\bGenerateRandomMask\s*\(", pre_compute_text)
+            and not re.search(r"\buint64_t\s+GenerateRandomMask\s*\(", pre_compute_text)):
+        with open(os.path.join(wrappers_dir, "GenerateRandomMask.cpp"), encoding="utf-8") as fw:
+            pre_compute_text = fw.read() + "\n" + pre_compute_text
     return pre_compute_text
 
 # Assemble generated calls into the NPU program template.
@@ -249,7 +262,6 @@ def main():
         matmul_args = [call["args_all"] for call in calls]
         matmul_args_first3 = [call["args_first3"] for call in calls]
         blocks_pre = []
-        blocks_post = []
         indent_pre = "        "
         indent_post = "        "
         for idx, seg in enumerate(parts[:-1]):
@@ -290,20 +302,9 @@ def main():
     cr_pre_mod = clean_conflicting_decls(cr_pre)
     cr_post_mod = clean_conflicting_decls(cr_post)
 
-    diag_start = (
-        indent_pre + 'AscendC::printf("[START] Compute begin: tensor_len=%d active_len=%d '
-        'input1[0]=%f input2[0]=%d\\n", '
-        'tensor_len, active_len, input1.GetValue(0), input2Local.GetValue(0));\n'
-    )
-    cr_pre_mod = indent_pre + "const int scratch_base = (offset_ptr + 31) & ~31;\n" + diag_start + cr_pre_mod
+    cr_pre_mod = indent_pre + "const int scratch_base = (offset_ptr + 31) & ~31;\n" + cr_pre_mod
     if last_out:
-
-        diag = (
-            indent_post + 'AscendC::printf("[RESULT] Compute done. Final output (' + last_out + '): '
-            'first=%f last=%f len=%d\\n", '
-            + last_out + '.GetValue(0), ' + last_out + '.GetValue(tensor_len>1?tensor_len-1:0), tensor_len);\n'
-        )
-        cr_post_mod = cr_post_mod + ("" if cr_post_mod.endswith("\n") else "\n") + diag +\
+        cr_post_mod = cr_post_mod + ("" if cr_post_mod.endswith("\n") else "\n") +\
             f"{indent_post}AscendC::DataCopy(OutputGlobal, {last_out}, tensor_len);\n"
     try:
         _script_dir2 = os.path.dirname(os.path.abspath(__file__))
@@ -331,23 +332,13 @@ def main():
                     out_lines.append(ln)
             return "".join(out_lines)
         new_text = insert_blocks(ttext, mapping)
-        new_text = remove_duplicate_decls(new_text)
+        new_text = normalize_local_tensor_sizes(remove_duplicate_decls(new_text))
         out_baremix_dir = os.path.dirname(tmpl_path)
         out_baremix = os.path.join(out_baremix_dir, "baremix_custom_program_out.cpp")
         with open(out_baremix, "w", encoding="utf-8") as of:
             of.write(new_text)
     except OSError as exc:
         raise SystemExit(f"Could not assemble the AscendC program: {exc}") from exc
-    json.dumps({
-        "pre_compute": a,
-        "compute_tensors": b,
-        "compute_rest": c,
-        "compute_rest_pre": cr_pre_mod,
-        "compute_rest_post": cr_post_mod,
-        "matmul_args": matmul_args,
-        "matmul_args_first3": matmul_args_first3,
-        "last_output": last_out
-    }, ensure_ascii=False)
     print("generate successfully!")
 
 if __name__ == "__main__":

@@ -1729,21 +1729,6 @@ def main():
         f"Nodes: {g.num_nodes}  Edges: {len(g.edges())}  "
         f"Loops: {len(g.cycles)}/{len(g.cycle_nodes)} nodes  Conditions: {len(g.conditions)}"
     )
-    log.debug(f"Loop nodes: {sorted(list(g.cycle_nodes))}")
-    log.debug("Example node labels:")
-    for n in range(min(5, g.num_nodes)):
-        extras = []
-        if n in g.cond_entries:
-            if_succ, else_succ = g.cond_entries[n]
-            extras.append(f"if->{if_succ}, else->{else_succ}")
-        if n in g.cond_exits:
-            extras.append(f"cond_entry:{g.cond_exits[n]}")
-        if n in g.loop_entries:
-            extras.append("loop_entry")
-        if n in g.loop_exits:
-            extras.append(f"loop_entry:{g.loop_exits[n]}")
-        log.debug(f"  Node {n}: op={g.node_op.get(n)}; {'; '.join(extras) if extras else 'no structural tags'}")
-
     if args.dot:
         dot_str = to_dot(g)
         with open(args.dot, "w", encoding="utf-8") as f:

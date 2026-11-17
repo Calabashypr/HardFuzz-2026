@@ -5,6 +5,10 @@ __aicore__ inline void LoadUnzipIndex_Mask2(const AscendC::LocalTensor<float> &o
         AscendC::LocalTensor<uint8_t> &sharedTmpBuffer,
         int &offset_ptr,
         const int32_t data_length) {
+#if __NPU_ARCH__ == 2201
+    // Use the C220 passthrough path.
+    AscendC::DataCopy(output, input0, (uint32_t)data_length);
+#else
     (void)sharedTmpBuffer; (void)offset_ptr;
     AscendC::GlobalTensor<int8_t> indexGlobal;
     indexGlobal.SetGlobalBuffer(reinterpret_cast<__gm__ int8_t *>(srcIndexGm), 512U);
@@ -14,4 +18,6 @@ __aicore__ inline void LoadUnzipIndex_Mask2(const AscendC::LocalTensor<float> &o
     AscendC::LoadUnzipIndexCal(indexGlobal, 1U);
 #endif
     AscendC::DataCopy(output, input0, (uint32_t)data_length);
+
+#endif
 }

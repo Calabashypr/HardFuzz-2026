@@ -13,7 +13,7 @@ def setup_logger(
 ) -> logging.Logger:
 
     logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
     logger.handlers.clear()
     logger.propagate = False
 
@@ -27,7 +27,7 @@ def setup_logger(
 
     if log_file:
         fh = logging.FileHandler(str(log_file), encoding="utf-8")
-        fh.setLevel(logging.DEBUG)
+        fh.setLevel(logging.INFO)
         fh.setFormatter(
             logging.Formatter(
                 "%(asctime)s %(levelname)s [%(name)s] %(message)s",

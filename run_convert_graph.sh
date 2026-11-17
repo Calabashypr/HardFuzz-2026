@@ -14,12 +14,11 @@ fi
 BASENAME="$(basename "$JSON_PATH")"
 NAME="${BASENAME%.*}"
 PROGRAM_CPP="$SCRIPT_DIR/program_${NAME}.cpp"
-echo $SCRIPT_DIR
 
 python3 "$SCRIPT_DIR/tools/prepare_graph.py" "$JSON_PATH" "$PROGRAM_CPP.graph.json"
 JSON_PATH="$PROGRAM_CPP.graph.json"
 
-python3 "$SCRIPT_DIR/execute_graph.py" --json "$JSON_PATH" --shape-manifest "$PROGRAM_CPP.tensor_lengths.json" --dtype-manifest "$PROGRAM_CPP.dtypes.json" | tee "$PROGRAM_CPP"
+python3 "$SCRIPT_DIR/execute_graph.py" --json "$JSON_PATH" --shape-manifest "$PROGRAM_CPP.tensor_lengths.json" --dtype-manifest "$PROGRAM_CPP.dtypes.json" > "$PROGRAM_CPP"
 COPY_DIR="${OUTDIR:-$SCRIPT_DIR/baremix_${NAME}}"
 rm -rf "$COPY_DIR"
 cp -r "$SCRIPT_DIR/baremix" "$COPY_DIR"
@@ -189,6 +188,5 @@ if [ ! -s "$GEN_CPP" ]; then
   echo "Failed to assemble AscendC program: $GEN_CPP" >&2
   exit 1
 fi
-mv "$COPY_DIR/baremix_custom.cpp" "$COPY_DIR/baremix_custom.cpp.bak"
 mv "$GEN_CPP" "$COPY_DIR/baremix_custom.cpp"
 echo "$COPY_DIR"

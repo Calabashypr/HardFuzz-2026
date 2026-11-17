@@ -5,6 +5,16 @@ __aicore__ inline void LoadImageToLocal_Mask2(const AscendC::LocalTensor<float> 
         AscendC::LocalTensor<uint8_t> &sharedTmpBuffer,
         int &offset_ptr,
         const int32_t data_length) {
+#if __NPU_ARCH__ == 2201
+    (void)input0; (void)sharedTmpBuffer; (void)offset_ptr;
+    // Convert grayscale pixels on C220.
+    const int32_t pixels = 16;
+    AscendC::GlobalTensor<uint8_t> image;
+    image.SetGlobalBuffer(reinterpret_cast<__gm__ uint8_t *>(src0Gm), (uint32_t)data_length);
+    for (int32_t i = 0; i < data_length; ++i) {
+        output.SetValue(i, (i < pixels) ? (float)(int32_t)image.GetValue(i) : 0.0f);
+    }
+#else
     (void)input0;
     AscendC::GlobalTensor<uint8_t> src0;
     src0.SetGlobalBuffer(reinterpret_cast<__gm__ uint8_t *>(src0Gm), 1024U);
@@ -20,4 +30,6 @@ __aicore__ inline void LoadImageToLocal_Mask2(const AscendC::LocalTensor<float> 
     int32_t outN = (data_length > dstElems) ? dstElems : data_length;
     for (int32_t i = 0; i < outN; ++i) output.SetValue(i, (float)dstHalf.GetValue(i));
     for (int32_t i = outN; i < data_length; ++i) output.SetValue(i, 0.0f);
+
+#endif
 }

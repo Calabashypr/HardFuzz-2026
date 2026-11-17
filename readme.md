@@ -9,6 +9,15 @@ This is the open-source repository for the paper "HardFuzz: Testing DL Compiler 
 
 #### Usage
 
+Load CANN 9 before compiling or running the oracles:
+
+```bash
+source tools/env_cann9.sh
+```
+
+Set `HARDFUZZ_CANN9_ROOT` before sourcing if CANN 9 is installed elsewhere.
+This changes only the current shell, not the system-wide SDK selection.
+
 ##### Test Input Generation
 
 1. Generate computation graphs as DOT and JSON files:
